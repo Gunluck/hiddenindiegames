@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, EmbedBuilder, ActivityType, PermissionsBitField, REST, Routes, SlashCommandBuilder } = require('discord.js');
+const { Client, GatewayIntentBits, EmbedBuilder, ActivityType, PermissionsBitField, REST, Routes, SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const fs = require('fs');
 const schedule = require('node-schedule');
 const axios = require('axios');
@@ -48,6 +48,13 @@ const commands = [
   new SlashCommandBuilder()
     .setName('anime')
     .setDescription('Get an anime recommendation'),
+  new SlashCommandBuilder()
+    .setName('animesearch')
+    .setDescription('Search for a specific anime via MyAnimeList')
+    .addStringOption(option =>
+      option.setName('name')
+        .setDescription('The name of the anime')
+        .setRequired(true)),
   new SlashCommandBuilder()
     .setName('stats')
     .setDescription('View bot statistics'),
@@ -224,6 +231,7 @@ client.on('interactionCreate', async interaction => {
       case 'top':   await handleTopCommand(interaction, true);    break;
       case 'search':await handleSearchCommand(interaction, true); break;
       case 'anime': await handleAnimeCommand(interaction, true);  break;
+      case 'animesearch': await handleAnimeSearchCommand(interaction, true); break;
       case 'stats': await handleStatsCommand(interaction, true);  break;
       case 'help':  await handleHelpCommand(interaction, true);   break;
       case 'about': await handleAboutCommand(interaction);        break;
@@ -457,12 +465,56 @@ async function handleTopCommand(context, isSlash = false) {
     return isSlash ? context.reply(response) : context.channel.send(response);
   }
 
-  const topGames = games.slice(0, 3)
-    .map((game, i) => `#${i + 1}: **${game.title}**\n${game.description}\n🔗 ${addAffiliate(game.link)}\n`)
-    .join('\n');
+  const topGames = games.slice(0, 10); // Show up to 10 games
+  let currentIndex = 0;
 
-  await (isSlash ? context.reply(`🔥 **Top Indie Games:**\n\n${topGames}`) :
-                   context.channel.send(`🔥 **Top Indie Games:**\n\n${topGames}`));
+  const generateEmbed = (index) => {
+    const game = topGames[index];
+    return new EmbedBuilder()
+      .setTitle(`🔥 Top Indie Games (#${index + 1} of ${topGames.length})`)
+      .setColor('#ff9900')
+      .addFields({ name: game.title, value: `${game.description}\n🔗 [Play Now](${addAffiliate(game.link)})` })
+      .setFooter({ text: 'Use buttons to navigate' });
+  };
+
+  const generateButtons = (index) => {
+    return new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId('prev_game')
+        .setLabel('⬅️ Previous')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(index === 0),
+      new ButtonBuilder()
+        .setCustomId('next_game')
+        .setLabel('Next ➡️')
+        .setStyle(ButtonStyle.Primary)
+        .setDisabled(index === topGames.length - 1)
+    );
+  };
+
+  const message = await (isSlash ?
+    context.reply({ embeds: [generateEmbed(currentIndex)], components: [generateButtons(currentIndex)], fetchReply: true }) :
+    context.channel.send({ embeds: [generateEmbed(currentIndex)], components: [generateButtons(currentIndex)] })
+  );
+
+  const collector = message.createMessageComponentCollector({ time: 60000 });
+
+  collector.on('collect', async i => {
+    if (i.user.id !== (isSlash ? context.user.id : context.author.id)) {
+      await i.reply({ content: 'These buttons are not for you!', ephemeral: true });
+      return;
+    }
+    if (i.customId === 'prev_game') currentIndex--;
+    else if (i.customId === 'next_game') currentIndex++;
+    
+    await i.update({ embeds: [generateEmbed(currentIndex)], components: [generateButtons(currentIndex)] });
+  });
+
+  collector.on('end', async () => {
+    try {
+      await message.edit({ components: [] });
+    } catch (e) {}
+  });
 }
 
 async function handleSearchCommand(context, isSlash = false) {
@@ -525,6 +577,42 @@ async function handleAnimeCommand(context, isSlash = false) {
   }
 }
 
+async function handleAnimeSearchCommand(context, isSlash = false) {
+  const searchTerm = isSlash ? context.options.getString('name') : context.content.slice(13);
+  if (!searchTerm?.trim()) {
+    const response = '❌ Please provide an anime name to search for.';
+    return isSlash ? context.reply(response) : context.channel.send(response);
+  }
+
+  try {
+    const res = await axios.get(`https://api.jikan.moe/v4/anime?q=${encodeURIComponent(searchTerm)}&limit=1`);
+    if (!res.data.data || res.data.data.length === 0) {
+      const response = `❌ No anime found matching "**${searchTerm}**".`;
+      return isSlash ? context.reply(response) : context.channel.send(response);
+    }
+
+    const anime = res.data.data[0];
+
+    const embed = new EmbedBuilder()
+      .setTitle(anime.title)
+      .setColor('#ff6b6b')
+      .setDescription(anime.synopsis ? (anime.synopsis.substring(0, 1000) + (anime.synopsis.length > 1000 ? '...' : '')) : 'No synopsis available.')
+      .setThumbnail(anime.images?.jpg?.image_url || '')
+      .addFields(
+        { name: '📺 Watch Status', value: anime.status || 'Unknown', inline: true },
+        { name: '⭐ Rating', value: anime.score ? `${anime.score}/10` : 'N/A', inline: true },
+        { name: '🎭 Genres', value: anime.genres?.map(g => g.name).join(', ') || 'N/A' },
+        { name: '🔗 More Info', value: `[View on MyAnimeList](${anime.url})` }
+      );
+
+    await (isSlash ? context.reply({ embeds: [embed] }) : context.channel.send({ embeds: [embed] }));
+  } catch (err) {
+    console.error('Error in animesearch:', err.message);
+    const response = '❌ Failed to search for anime. The API might be busy.';
+    await (isSlash ? context.reply({ content: response, ephemeral: true }) : context.channel.send(response));
+  }
+}
+
 async function handleStatsCommand(context, isSlash = false) {
   const games = getGames();
   const stats = await getStats();
@@ -556,7 +644,7 @@ async function handleHelpCommand(context, isSlash = false) {
         value: '`/game` - Random game\n`/daily` - Today\'s featured game\n`/top` - Top 3 games\n`/search [term]` - Search games\n`/wishlist` - Manage your wishlist',
         inline: false },
       { name: '📺 Anime Commands',
-        value: '`/anime` - Random anime recommendation',
+        value: '`/anime` - Random anime recommendation\n`/animesearch [name]` - Search for specific anime',
         inline: false },
       { name: '📊 Stats & Info',
         value: '`/stats` - Bot statistics\n`/help` - This message\n`/about` - About the bot',
