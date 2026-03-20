@@ -524,6 +524,7 @@ async function handleGameCommand(context, isSlash = false) {
     .setTitle(game.title)
     .setColor('#ff6b6b')
     .setDescription(game.description)
+    .setImage(game.image || null)
     .addFields({ name: '🎮 Play Now', value: `[Click here to play](${addAffiliate(game.link)})` })
     .setFooter({ text: 'Use /daily to see today\'s featured game' })
     .setTimestamp();
@@ -554,6 +555,7 @@ async function handleDailyCommand(context, isSlash = false) {
     .setTitle(`📅 Daily Pick: ${game.title}`)
     .setColor('#7289da')
     .setDescription(game.description)
+    .setImage(game.image || null)
     .addFields({ name: '🔗 Play Now', value: `[Click here](${addAffiliate(game.link)})` })
     .setTimestamp();
 
@@ -576,6 +578,7 @@ async function handleTopCommand(context, isSlash = false) {
     return new EmbedBuilder()
       .setTitle(`🔥 Top Indie Games (#${index + 1} of ${topGames.length})`)
       .setColor('#ff9900')
+      .setImage(game.image || null)
       .addFields({ name: game.title, value: `${game.description}\n🔗 [Play Now](${addAffiliate(game.link)})` })
       .setFooter({ text: 'Use buttons to navigate' });
   };
@@ -791,6 +794,7 @@ async function postDailyGame() {
     .setTitle(`📅 Daily Game: ${game.title}`)
     .setColor('#ff6b6b')
     .setDescription(game.description)
+    .setImage(game.image || null)
     .addFields({ name: '🔗 Play Now', value: `[Click here](${addAffiliate(game.link)})` })
     .setTimestamp();
 

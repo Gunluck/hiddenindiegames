@@ -99,11 +99,16 @@ async function scrapeGames() {
         let fullLink = href.startsWith('http') ? href : `https://itch.io${href}`;
         const fullLinkWithAffiliate = addAffiliate(fullLink);
         const description = 'Discover a new indie gem!';
+        
+        // Try to get image
+        const imgTag = $(el).find('img');
+        const image = imgTag.attr('data-lazy_src') || imgTag.attr('src') || '';
 
         games.push({
           title,
           description,
-          link: fullLinkWithAffiliate
+          link: fullLinkWithAffiliate,
+          image
         });
       } catch (err) {
         console.warn(`Error processing game ${i + 1}:`, err.message);
