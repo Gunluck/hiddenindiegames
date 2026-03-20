@@ -6,7 +6,7 @@ const axios = require('axios');
 require('dotenv').config();
 
 // Connect to MongoDB
-const { connectDB, AllowedServer, UsedItem, PostStats, getStats } = require('./db');
+const { connectDB, AllowedServer, UsedItem, PostStats, getStats, Wishlist } = require('./db');
 connectDB();
 
 // Keep the bot alive on Render
@@ -57,6 +57,23 @@ const commands = [
   new SlashCommandBuilder()
     .setName('about')
     .setDescription('Learn about the bot'),
+  new SlashCommandBuilder()
+    .setName('wishlist')
+    .setDescription('Manage your personal game wishlist')
+    .addSubcommand(sub => sub
+      .setName('add')
+      .setDescription('Add a game to your wishlist')
+      .addStringOption(opt => opt.setName('title').setDescription('Game title').setRequired(true))
+    )
+    .addSubcommand(sub => sub
+      .setName('view')
+      .setDescription('View your saved wishlist games')
+    )
+    .addSubcommand(sub => sub
+      .setName('remove')
+      .setDescription('Remove a game from your wishlist')
+      .addStringOption(opt => opt.setName('title').setDescription('Game title').setRequired(true))
+    ),
   new SlashCommandBuilder()
     .setName('approve')
     .setDescription('(Owner Only) Approve a server')
@@ -210,6 +227,7 @@ client.on('interactionCreate', async interaction => {
       case 'stats': await handleStatsCommand(interaction, true);  break;
       case 'help':  await handleHelpCommand(interaction, true);   break;
       case 'about': await handleAboutCommand(interaction);        break;
+      case 'wishlist': await handleWishlistCommand(interaction, true); break;
 
       case 'approve': {
         const serverId = interaction.options.getString('server_id');
@@ -535,7 +553,7 @@ async function handleHelpCommand(context, isSlash = false) {
     .setColor('#00ff00')
     .addFields(
       { name: '🎲 Game Commands',
-        value: '`/game` - Random game\n`/daily` - Today\'s featured game\n`/top` - Top 3 games\n`/search [term]` - Search games',
+        value: '`/game` - Random game\n`/daily` - Today\'s featured game\n`/top` - Top 3 games\n`/search [term]` - Search games\n`/wishlist` - Manage your wishlist',
         inline: false },
       { name: '📺 Anime Commands',
         value: '`/anime` - Random anime recommendation',
@@ -597,6 +615,56 @@ async function postDailyGame() {
       gameUseCount = 0;
     } catch (err) {
       console.error('Error reloading games:', err);
+    }
+  }
+}
+
+async function handleWishlistCommand(context, isSlash = false) {
+  if (!isSlash) return;
+
+  const sub = context.options.getSubcommand();
+  const userId = context.user.id;
+
+  if (sub === 'add') {
+    const title = context.options.getString('title');
+    const games = getGames();
+    const game = games.find(g => g.title.toLowerCase() === title.toLowerCase());
+    const link = game ? game.link : '';
+    const finalTitle = game ? game.title : title;
+
+    try {
+      await Wishlist.create({ userId, title: finalTitle, link });
+      await context.reply({ content: `✅ Added **${finalTitle}** to your wishlist! Use \`/wishlist view\` to see it.`, ephemeral: true });
+    } catch (err) {
+      if (err.code === 11000) {
+        await context.reply({ content: `❌ **${finalTitle}** is already in your wishlist!`, ephemeral: true });
+      } else {
+        await context.reply({ content: `❌ Failed to add to wishlist.`, ephemeral: true });
+      }
+    }
+  } else if (sub === 'view') {
+    const items = await Wishlist.find({ userId });
+    if (!items.length) {
+      return context.reply({ content: `Your wishlist is empty! Use \`/wishlist add [title]\` to save games.`, ephemeral: true });
+    }
+
+    const embed = new EmbedBuilder()
+      .setTitle(`🎮 ${context.user.username}'s Wishlist`)
+      .setColor('#0099ff');
+    
+    const list = items.map((item, i) => {
+      return item.link ? `${i + 1}. [${item.title}](${addAffiliate(item.link)})` : `${i + 1}. **${item.title}**`;
+    }).join('\n').slice(0, 4000);
+
+    embed.setDescription(list || 'No items.');
+    await context.reply({ embeds: [embed], ephemeral: true });
+  } else if (sub === 'remove') {
+    const title = context.options.getString('title');
+    const result = await Wishlist.deleteOne({ userId, title: { $regex: new RegExp(`^${title}$`, 'i') } });
+    if (result.deletedCount > 0) {
+      await context.reply({ content: `✅ Removed **${title}** from your wishlist.`, ephemeral: true });
+    } else {
+      await context.reply({ content: `❌ **${title}** not found in your wishlist.`, ephemeral: true });
     }
   }
 }

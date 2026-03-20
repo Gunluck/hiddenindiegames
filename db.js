@@ -27,6 +27,14 @@ const usedItemSchema = new mongoose.Schema({
 });
 usedItemSchema.index({ title: 1, type: 1 }, { unique: true });
 
+// Per-user wishlist
+const wishlistSchema = new mongoose.Schema({
+  userId:  { type: String, required: true },
+  title:   { type: String, required: true },
+  link:    { type: String, default: '' }
+});
+wishlistSchema.index({ userId: 1, title: 1 }, { unique: true });
+
 // Singleton post stats doc
 const postStatsSchema = new mongoose.Schema({
   gameCount:  { type: Number, default: 0 },
@@ -36,6 +44,7 @@ const postStatsSchema = new mongoose.Schema({
 // ── Models ───────────────────────────────────────────────
 const AllowedServer = mongoose.model('AllowedServer', allowedServerSchema);
 const UsedItem      = mongoose.model('UsedItem',      usedItemSchema);
+const Wishlist      = mongoose.model('Wishlist',      wishlistSchema);
 const PostStats     = mongoose.model('PostStats',     postStatsSchema);
 
 // ── Helper: get or create the singleton stats doc ────────
@@ -45,4 +54,4 @@ async function getStats() {
   return stats;
 }
 
-module.exports = { connectDB, AllowedServer, UsedItem, PostStats, getStats };
+module.exports = { connectDB, AllowedServer, UsedItem, Wishlist, PostStats, getStats };
