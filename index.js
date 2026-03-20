@@ -100,7 +100,21 @@ const commands = [
     .setDescription('(Owner Only) View pending server requests'),
   new SlashCommandBuilder()
     .setName('servers')
-    .setDescription('(Owner Only) View all approved servers')
+    .setDescription('(Owner Only) View all approved servers'),
+  new SlashCommandBuilder()
+    .setName('broadcast')
+    .setDescription('(Owner Only) Send a message to all approved servers')
+    .addStringOption(option =>
+      option.setName('message')
+        .setDescription('The message to broadcast')
+        .setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('removeserver')
+    .setDescription('(Owner Only) Remove an approved server')
+    .addStringOption(option =>
+      option.setName('server_id')
+        .setDescription('The ID of the server to remove')
+        .setRequired(true))
 ];
 
 // ── Bot Ready ────────────────────────────────────────────
@@ -241,7 +255,7 @@ client.on('interactionCreate', async interaction => {
   }
 
   try {
-    if (['approve', 'deny', 'pending', 'servers'].includes(commandName)) {
+    if (['approve', 'deny', 'pending', 'servers', 'broadcast', 'removeserver'].includes(commandName)) {
       if (interaction.user.id !== OWNER_ID) {
         await interaction.reply({ content: '❌ This command is only available to the bot owner.', ephemeral: true });
         return;
@@ -368,6 +382,72 @@ client.on('interactionCreate', async interaction => {
         }
 
         await interaction.reply({ embeds: [serversEmbed], ephemeral: true });
+        break;
+      }
+
+      case 'broadcast': {
+        const message = interaction.options.getString('message');
+        const approvedServers = await AllowedServer.find();
+        let successCount = 0;
+        let failCount = 0;
+
+        await interaction.deferReply({ ephemeral: true });
+
+        const embed = new EmbedBuilder()
+          .setTitle('📢 Developer Announcement')
+          .setColor('#ffcc00')
+          .setDescription(message)
+          .setFooter({ text: 'This message was sent by the bot owner to all approved servers.' })
+          .setTimestamp();
+
+        for (const doc of approvedServers) {
+          const guild = client.guilds.cache.get(doc.serverId);
+          if (guild) {
+            const defaultChannel = guild.channels.cache.find(
+              channel => channel.type === 0 && channel.permissionsFor(guild.members.me).has(['SendMessages', 'ViewChannel'])
+            );
+            if (defaultChannel) {
+              try {
+                await defaultChannel.send({ embeds: [embed] });
+                successCount++;
+              } catch (e) {
+                failCount++;
+              }
+            } else {
+              failCount++;
+            }
+          } else {
+            failCount++;
+          }
+        }
+
+        await interaction.editReply({ content: `✅ Broadcast complete! Successfully sent to **${successCount}** servers (Failed: ${failCount}).` });
+        break;
+      }
+
+      case 'removeserver': {
+        const serverId = interaction.options.getString('server_id');
+        const result = await AllowedServer.deleteOne({ serverId });
+        
+        if (result.deletedCount === 0) {
+          await interaction.reply({ content: `❌ Server **${serverId}** not found in the approved list.`, ephemeral: true });
+          return;
+        }
+
+        const guild = client.guilds.cache.get(serverId);
+        if (guild) {
+          const defaultChannel = guild.channels.cache.find(
+            channel => channel.type === 0 && channel.permissionsFor(guild.members.me).has(['SendMessages', 'ViewChannel'])
+          );
+          if (defaultChannel) {
+            try {
+              await defaultChannel.send('❌ This server has been removed from the approved list by the developer. The bot will now leave.');
+            } catch (e) {}
+          }
+          await guild.leave();
+        }
+
+        await interaction.reply({ content: `✅ Server **${serverId}** removed from database. Bot has left (if it was still in the server).`, ephemeral: true });
         break;
       }
     }
