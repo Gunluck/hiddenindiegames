@@ -212,10 +212,33 @@ client.on('guildCreate', async (guild) => {
 });
 
 // ── Slash Command Handler ────────────────────────────────
+const cooldowns = new Map();
+const COOLDOWN_SECONDS = 5;
+
 client.on('interactionCreate', async interaction => {
   if (!interaction.isCommand()) return;
 
   const { commandName } = interaction;
+
+  // Rate Limiting (Bypass for owner)
+  if (interaction.user.id !== OWNER_ID) {
+    if (!cooldowns.has(commandName)) {
+      cooldowns.set(commandName, new Map());
+    }
+    const timestamps = cooldowns.get(commandName);
+    const now = Date.now();
+    const cooldownAmount = COOLDOWN_SECONDS * 1000;
+
+    if (timestamps.has(interaction.user.id)) {
+      const expirationTime = timestamps.get(interaction.user.id) + cooldownAmount;
+      if (now < expirationTime) {
+        const timeLeft = ((expirationTime - now) / 1000).toFixed(1);
+        return interaction.reply({ content: `⏳ Please wait ${timeLeft} more seconds before using \`/${commandName}\` again.`, ephemeral: true });
+      }
+    }
+    timestamps.set(interaction.user.id, now);
+    setTimeout(() => timestamps.delete(interaction.user.id), cooldownAmount);
+  }
 
   try {
     if (['approve', 'deny', 'pending', 'servers'].includes(commandName)) {
