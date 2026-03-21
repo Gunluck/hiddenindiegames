@@ -791,7 +791,7 @@ async function postDailyGame() {
   }
 
   const embed = new EmbedBuilder()
-    .setTitle(`📅 Daily Game: ${game.title}`)
+    .setTitle(`Daily Game: ${game.title}`)
     .setColor('#ff6b6b')
     .setDescription(game.description)
     .setImage(game.image || null)
